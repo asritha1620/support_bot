@@ -1,2 +1,1 @@
-# support_bot
-support_bot tool
+add the excel file, having tickets to the root folder of backend code
