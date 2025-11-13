@@ -131,7 +131,7 @@ sessions = {}
 
 # Default session configuration
 DEFAULT_SESSION_ID = "default_support_tickets"
-DEFAULT_EXCEL_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "L2_L3Tickets.xlsx")
+DEFAULT_EXCEL_FILE = os.path.join(os.path.dirname(__file__), "L2_L3Tickets.xlsx")
 
 async def load_default_data():
     """Load the default support ticket data on startup - try persisted data first, then default Excel"""
@@ -527,4 +527,5 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
         log_level="info"
+
     )
