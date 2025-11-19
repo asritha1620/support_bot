@@ -51,14 +51,11 @@ function App() {
   const checkApiHealthAndDefaults = async () => {
     try {
       const health = await ApiService.checkHealth();
-      if (health.gemini_api === 'disconnected') {
-        setError('Gemini API is not connected. Please check your API key.');
-      }
-
-      const defaultSession = await ApiService.getDefaultSession();
-      if (defaultSession.available) {
+      if (health.vectorstore_loaded) {
         setHasDefaultData(true);
-        setSuccess('Default support ticket data loaded! You can start chatting immediately.');
+        setSuccess('Knowledge base loaded! You can start chatting immediately.');
+      } else {
+        setSuccess('Knowledge base is loading... Please wait.');
       }
     } catch (err) {
       setError('Cannot connect to the backend API. Please ensure the server is running.');
@@ -71,17 +68,8 @@ function App() {
     try {
       const response = await ApiService.uploadFile(file, sessionId);
       
-      // File was added to shared knowledge base, refresh shared session info
-      const defaultSession = await ApiService.getDefaultSession();
-      if (defaultSession.available) {
-        // Update to show shared file info instead of personal
-        setFileInfo(defaultSession.file_info);
-        setHasDefaultData(true);
-      }
-      
-      // Don't clear chat history since we're using shared knowledge base
-      // setChatHistory([]); // Commented out
-      
+      // File was added to shared knowledge base
+      setHasDefaultData(true);
       setSuccess(`File '${file.name}' added to shared knowledge base! All users can now access this data.`);
     } catch (err) {
       setError(err.response?.data?.detail || 'Error uploading file');
@@ -124,15 +112,6 @@ function App() {
     }
   };
 
-  const handleFeedback = async (messageId, feedback) => {
-    try {
-      await ApiService.submitFeedback(messageId, feedback, sessionId);
-      setSuccess(`Thank you for your ${feedback} feedback!`);
-    } catch (err) {
-      setError('Error submitting feedback');
-    }
-  };
-
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -154,7 +133,6 @@ function App() {
           <ChatInterface
             chatHistory={chatHistory}
             onSendMessage={handleSendMessage}
-            onFeedback={handleFeedback}
             onFileUpload={handleFileUpload}
             disabled={isLoading}
             hasDefaultData={hasDefaultData}
