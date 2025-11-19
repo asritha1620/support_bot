@@ -38,28 +38,13 @@ class ApiService {
     return response.data;
   }
 
-  async submitFeedback(messageId, feedback, sessionId, comment = null) {
-    const response = await this.api.post('/feedback', {
-      message_id: messageId,
-      feedback,
-      session_id: sessionId,
-      comment,
-    });
+  async addResolution(resolutionData, sessionId) {
+    const response = await this.api.post('/add-resolution', resolutionData);
     return response.data;
   }
 
-  async getSession(sessionId) {
-    const response = await this.api.get(`/session/${sessionId}`);
-    return response.data;
-  }
-
-  async deleteSession(sessionId) {
-    const response = await this.api.delete(`/session/${sessionId}`);
-    return response.data;
-  }
-
-  async getDefaultSession() {
-    const response = await this.api.get('/default-session');
+  async submitFeedback(feedbackData) {
+    const response = await this.api.post('/feedback', feedbackData);
     return response.data;
   }
 }
