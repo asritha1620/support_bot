@@ -26,29 +26,39 @@ import {
   Send,
   Person,
   SmartToy,
-  ThumbUp,
-  ThumbDown,
   ExpandMore,
   ExpandLess,
   Error,
   AttachFile,
-  Add
+  Add,
+  ThumbUp,
+  ThumbDown
 } from '@mui/icons-material';
+import ApiService from '../services/ApiService';
 
 const ChatMessage = ({ message, onFeedback }) => {
   const [showSources, setShowSources] = useState(false);
-  const [feedbackGiven, setFeedbackGiven] = useState(null);
-
-  const handleFeedback = (feedback) => {
-    onFeedback(message.id, feedback);
-    setFeedbackGiven(feedback);
-  };
+  const [feedbackGiven, setFeedbackGiven] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
 
   const formatTime = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const handleFeedback = (type) => {
+    setFeedbackGiven(true);
+    
+    // Set appropriate feedback message
+    if (type === 'positive') {
+      setFeedbackMessage('Thanks for the feedback! 😊');
+    } else {
+      setFeedbackMessage('Thanks for your feedback! 📝');
+    }
+    
+    onFeedback(type, message);
   };
 
   return (
@@ -81,78 +91,83 @@ const ChatMessage = ({ message, onFeedback }) => {
            message.type === 'error' ? <Error /> : <SmartToy />}
         </Avatar>
 
-        <Paper
-          elevation={1}
-          sx={{
-            p: 0.5,
-            bgcolor: message.type === 'user' ? 'primary.light' :
-                    message.type === 'error' ? 'error.light' : 'grey.100',
-            color: message.type === 'user' ? 'primary.contrastText' : 'text.primary'
-          }}
-        >
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-            {message.content}
-          </Typography>
+        <Box sx={{ maxWidth: '100%' }}>
+          <Paper
+            elevation={1}
+            sx={{
+              p: 0.5,
+              bgcolor: message.type === 'user' ? 'primary.light' :
+                      message.type === 'error' ? 'error.light' : 'grey.100',
+              color: message.type === 'user' ? 'primary.contrastText' : 'text.primary'
+            }}
+          >
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+              {message.content}
+            </Typography>
 
-          <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.7 }}>
-            {formatTime(message.timestamp)}
-          </Typography>
+            <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.7 }}>
+              {formatTime(message.timestamp)}
+            </Typography>
 
-          {message.type === 'assistant' && message.sources && message.sources.length > 0 && (
-            <Box mt={1}>
-              <Button
-                size="small"
-                onClick={() => setShowSources(!showSources)}
-                endIcon={showSources ? <ExpandLess /> : <ExpandMore />}
-                sx={{ p: 0, minWidth: 'auto' }}
-              >
-                <Typography variant="caption">
-                  Sources ({message.sources.length})
-                </Typography>
-              </Button>
+            {message.type === 'assistant' && message.sources && message.sources.length > 0 && (
+              <Box mt={1}>
+                <Button
+                  size="small"
+                  onClick={() => setShowSources(!showSources)}
+                  endIcon={showSources ? <ExpandLess /> : <ExpandMore />}
+                  sx={{ p: 0, minWidth: 'auto' }}
+                >
+                  <Typography variant="caption">
+                    Sources ({message.sources.length})
+                  </Typography>
+                </Button>
 
-              <Collapse in={showSources}>
-                <Box mt={1}>
-                  {message.sources.map((source, index) => (
-                    <Chip
-                      key={index}
-                      label={`Row ${source.metadata.row_index || 'N/A'}`}
-                      size="small"
-                      variant="outlined"
-                      sx={{ mr: 0.5, mb: 0.5 }}
-                    />
-                  ))}
-                </Box>
-              </Collapse>
-            </Box>
-          )}
+                <Collapse in={showSources}>
+                  <Box mt={1}>
+                    {message.sources.map((source, index) => (
+                      <Chip
+                        key={index}
+                        label={source.metadata.source || 'Unknown source'}
+                        size="small"
+                        variant="outlined"
+                        sx={{ mr: 0.5, mb: 0.5 }}
+                      />
+                    ))}
+                  </Box>
+                </Collapse>
+              </Box>
+            )}
+          </Paper>
 
-          {message.type === 'assistant' && (
-            <Box mt={1} display="flex" gap={1}>
+          {/* Feedback buttons for assistant messages */}
+          {message.type === 'assistant' && !feedbackGiven && (
+            <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start' }}>
               <IconButton
                 size="small"
                 onClick={() => handleFeedback('positive')}
-                color={feedbackGiven === 'positive' ? 'success' : 'default'}
-                disabled={feedbackGiven !== null}
+                sx={{ p: 0.5 }}
+                title="Good response"
               >
-                <ThumbUp fontSize="small" />
+                <ThumbUp fontSize="small" color="action" />
               </IconButton>
               <IconButton
                 size="small"
                 onClick={() => handleFeedback('negative')}
-                color={feedbackGiven === 'negative' ? 'error' : 'default'}
-                disabled={feedbackGiven !== null}
+                sx={{ p: 0.5 }}
+                title="Needs improvement"
               >
-                <ThumbDown fontSize="small" />
+                <ThumbDown fontSize="small" color="action" />
               </IconButton>
-              {feedbackGiven && (
-                <Typography variant="caption" sx={{ alignSelf: 'center', ml: 1 }}>
-                  Thank you for your feedback!
-                </Typography>
-              )}
             </Box>
           )}
-        </Paper>
+
+          {/* Feedback confirmation */}
+          {message.type === 'assistant' && feedbackGiven && (
+            <Typography variant="caption" sx={{ mt: 0.5, opacity: 0.7, display: 'block', textAlign: message.type === 'user' ? 'right' : 'left' }}>
+              {feedbackMessage}
+            </Typography>
+          )}
+        </Box>
       </Box>
     </ListItem>
   );
@@ -161,7 +176,6 @@ const ChatMessage = ({ message, onFeedback }) => {
 const ChatInterface = ({
   chatHistory,
   onSendMessage,
-  onFeedback,
   disabled,
   onFileUpload,
   hasDefaultData,
@@ -170,6 +184,12 @@ const ChatInterface = ({
 }) => {
   const [message, setMessage] = useState('');
   const [addResolutionOpen, setAddResolutionOpen] = useState(false);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [feedbackData, setFeedbackData] = useState({
+    type: '',
+    message: null,
+    suggestions: ''
+  });
   const [resolutionData, setResolutionData] = useState({
     error_code: '',
     module: '',
@@ -235,7 +255,7 @@ const ChatInterface = ({
     }
 
     try {
-      const response = await fetch('http://localhost:8000/add-resolution?session_id=default_support_tickets', {
+      const response = await fetch('http://localhost:8000/add-resolution', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -246,7 +266,6 @@ const ChatInterface = ({
       if (response.ok) {
         alert('Resolution added successfully to the shared knowledge base! All users can now access this resolution.');
         handleCloseResolutionDialog();
-        // Note: Chat history is preserved, no page reload needed
       } else {
         const error = await response.json();
         alert(`Failed to add resolution: ${error.detail || 'Please try again.'}`);
@@ -257,10 +276,30 @@ const ChatInterface = ({
     }
   };
 
+  const handleFeedback = (type, message) => {
+    if (type === 'negative') {
+      setFeedbackData({ type, message, suggestions: '' });
+      setFeedbackDialogOpen(true);
+    } else {
+      // For positive feedback, just send it directly
+      ApiService.submitFeedback({ type, messageId: message.id });
+    }
+  };
+
+  const handleFeedbackSubmit = async () => {
+    await ApiService.submitFeedback({
+      type: feedbackData.type,
+      messageId: feedbackData.message.id,
+      suggestions: feedbackData.suggestions
+    });
+    setFeedbackDialogOpen(false);
+    setFeedbackData({ type: '', message: null, suggestions: '' });
+  };
+
   const exampleQuestions = [
-    "What is the summary of these support tickets?",
-    "What are the most common ticket categories?",
-    "what are the common error codes in shipment?"
+    "What are the most common shipping errors this month?",
+    "Can you show me tickets related to payment failures?",
+    "Show me tickets from customer ID 12345"
   ];
 
   return (
@@ -305,7 +344,7 @@ const ChatInterface = ({
           ) : (
             <>
               <Typography variant="h6" color="text.secondary" gutterBottom>
-                Welcome to Support Ticket Assistant! 🤖
+                Welcome to Support Ticket Assistant!
               </Typography>
               <Typography variant="body2" color="text.secondary" gutterBottom sx={{ mb: 2 }}>
                 Upload Excel files to add to the shared knowledge base, or try asking one of these questions:
@@ -344,7 +383,7 @@ const ChatInterface = ({
         {chatHistory.length > 0 && (
           <List sx={{ p: 0 }}>
             {chatHistory.map((msg, index) => (
-              <ChatMessage key={msg.id || index} message={msg} onFeedback={onFeedback} />
+              <ChatMessage key={msg.id || index} message={msg} onFeedback={handleFeedback} />
             ))}
             
             {/* Loading indicator */}
@@ -523,6 +562,33 @@ const ChatInterface = ({
           <Button onClick={handleCloseResolutionDialog}>Cancel</Button>
           <Button onClick={handleSubmitResolution} variant="contained">
             Add Resolution
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Feedback Dialog */}
+      <Dialog open={feedbackDialogOpen} onClose={() => setFeedbackDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Provide Feedback</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              What could be improved about this response?
+            </Typography>
+            <TextField
+              fullWidth
+              multiline
+              rows={4}
+              placeholder="Please describe what was wrong or what could be better..."
+              value={feedbackData.suggestions}
+              onChange={(e) => setFeedbackData(prev => ({ ...prev, suggestions: e.target.value }))}
+              sx={{ mt: 1 }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setFeedbackDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleFeedbackSubmit} variant="contained" disabled={!feedbackData.suggestions.trim()}>
+            Submit Feedback
           </Button>
         </DialogActions>
       </Dialog>
