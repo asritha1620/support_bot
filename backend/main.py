@@ -1,531 +1,312 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import uvicorn, os, tempfile, json
-import pandas as pd
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-from rag_service_simple import RAGService, Document
-from models import ChatRequest, ChatResponse, FileUploadResponse
+import os
+from dotenv import load_dotenv
+import logging
+from schemas import ChatRequest, ChatResponse, ResolutionRequest, HealthResponse, FeedbackRequest
+from rag import RAGProcessor
+import datetime
+import json
+from collections import defaultdict
+from typing import Dict, List
 
-# Persistence configuration
-PERSISTENCE_DIR = os.path.join(os.path.dirname(__file__), "data")
-SHARED_DOCUMENTS_FILE = os.path.join(PERSISTENCE_DIR, "shared_documents.json")
-SHARED_SESSION_FILE = os.path.join(PERSISTENCE_DIR, "shared_session.json")
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def save_shared_documents(documents: List[Dict[str, Any]], session_id: str):
-    """Save shared documents to persistent storage"""
-    try:
-        os.makedirs(PERSISTENCE_DIR, exist_ok=True)
-        
-        # Convert documents to serializable format
-        serializable_docs = []
-        for doc in documents:
-            serializable_docs.append({
-                "page_content": doc.page_content,
-                "metadata": doc.metadata
-            })
-        
-        data = {
-            "session_id": session_id,
-            "documents": serializable_docs,
-            "last_updated": datetime.now().isoformat()
-        }
-        
-        with open(SHARED_DOCUMENTS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        
-        print(f"Saved {len(documents)} shared documents to {SHARED_DOCUMENTS_FILE}")
-        
-    except Exception as e:
-        print(f"Error saving shared documents: {str(e)}")
-
-def load_shared_documents() -> tuple[List[Dict[str, Any]], str]:
-    """Load shared documents from persistent storage"""
-    try:
-        if not os.path.exists(SHARED_DOCUMENTS_FILE):
-            return [], ""
-        
-        with open(SHARED_DOCUMENTS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # Convert back to Document objects
-        documents = []
-        for doc_data in data.get("documents", []):
-            documents.append(Document(
-                page_content=doc_data["page_content"],
-                metadata=doc_data["metadata"]
-            ))
-        
-        session_id = data.get("session_id", "")
-        print(f"Loaded {len(documents)} shared documents from {SHARED_DOCUMENTS_FILE}")
-        
-        return documents, session_id
-        
-    except Exception as e:
-        print(f"Error loading shared documents: {str(e)}")
-        return [], ""
-
-def save_shared_session(session_data: Dict[str, Any]):
-    """Save shared session metadata to persistent storage"""
-    try:
-        os.makedirs(PERSISTENCE_DIR, exist_ok=True)
-        
-        data = {
-            "session_data": session_data,
-            "last_updated": datetime.now().isoformat()
-        }
-        
-        with open(SHARED_SESSION_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        
-        print(f"Saved shared session data to {SHARED_SESSION_FILE}")
-        
-    except Exception as e:
-        print(f"Error saving shared session: {str(e)}")
-
-def load_shared_session() -> Dict[str, Any]:
-    """Load shared session metadata from persistent storage"""
-    try:
-        if not os.path.exists(SHARED_SESSION_FILE):
-            return {}
-        
-        with open(SHARED_SESSION_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        session_data = data.get("session_data", {})
-        print(f"Loaded shared session data from {SHARED_SESSION_FILE}")
-        
-        return session_data
-        
-    except Exception as e:
-        print(f"Error loading shared session: {str(e)}")
-        return {}
+# Load environment variables
+load_dotenv()
 
 # Initialize FastAPI app
-app = FastAPI(
-    title="Support bot",
-    description="A powerful RAG-based chatbot using Gemini AI",
-    version="1.0.0"
-)
+app = FastAPI(title="Support Ticket Assistant API")
 
-# Configure CORS
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # React dev server
+    allow_origins=["*"],  # In production, specify your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Global RAG processor
+rag_processor = RAGProcessor()
+
+# Session memory storage - in production, use Redis or database
+session_memories: Dict[str, List[Dict]] = defaultdict(list)
+MAX_MEMORY_MESSAGES = 20  # Keep last 20 messages per session
+cleanup_counter = 0  # Counter for periodic cleanup
+
+def add_to_session_memory(session_id: str, message: Dict):
+    """Add a message to session memory, maintaining max limit"""
+    if session_id not in session_memories:
+        session_memories[session_id] = []
+    
+    session_memories[session_id].append(message)
+    
+    # Keep only the most recent messages
+    if len(session_memories[session_id]) > MAX_MEMORY_MESSAGES:
+        session_memories[session_id] = session_memories[session_id][-MAX_MEMORY_MESSAGES:]
+    
+    logger.debug(f"Added message to session {session_id} memory. Total messages: {len(session_memories[session_id])}")
+
+def get_session_memory(session_id: str) -> List[Dict]:
+    """Get conversation history for a session"""
+    return session_memories.get(session_id, [])
+
+def cleanup_old_sessions(max_age_hours: int = 24):
+    """Clean up sessions that haven't been active for max_age_hours"""
+    current_time = datetime.datetime.now()
+    sessions_to_remove = []
+    
+    for session_id, messages in session_memories.items():
+        if messages:
+            last_message_time = datetime.datetime.fromisoformat(messages[-1]["timestamp"])
+            age = current_time - last_message_time
+            if age.total_seconds() > max_age_hours * 3600:
+                sessions_to_remove.append(session_id)
+    
+    for session_id in sessions_to_remove:
+        del session_memories[session_id]
+        logger.info(f"Cleaned up old session: {session_id}")
+    
+    if sessions_to_remove:
+        logger.info(f"Cleaned up {len(sessions_to_remove)} old sessions")
+
+# Initialize models
+def initialize_models():
+    api_key1 = os.getenv('GEMINI_API_KEY1')
+    api_key2 = os.getenv('GEMINI_API_KEY2')
+    
+    if not api_key1:
+        logger.error("GEMINI_API_KEY1 is required but not found in environment variables")
+        raise ValueError("GEMINI_API_KEY1 is required")
+    
+    if not api_key2:
+        logger.warning("GEMINI_API_KEY2 not found - fallback functionality will not be available")
+    
+    logger.info("Initializing RAG processor with API keys")
+    rag_processor.initialize_models(api_key1, api_key2)
+    logger.info("RAG processor initialized successfully")
+
+# Initialize on startup
 @app.on_event("startup")
 async def startup_event():
-    """Load default data on application startup"""
-    await load_default_data()
-
-# Global RAG service instance
-rag_service = RAGService()
-
-# Store session data
-sessions = {}
-
-# Default session configuration
-DEFAULT_SESSION_ID = "default_support_tickets"
-DEFAULT_EXCEL_FILE = os.path.join(os.path.dirname(__file__), "L2_L3Tickets.xlsx")
-
-async def load_default_data():
-    """Load the default support ticket data on startup - try persisted data first, then default Excel"""
     try:
-        # First, try to load persisted shared data
-        persisted_documents, persisted_session_id = load_shared_documents()
-        persisted_session_data = load_shared_session()
+        logger.info("Starting application initialization")
+        initialize_models()
         
-        if persisted_documents and persisted_session_data:
-            print("Loading persisted shared knowledge base...")
-            
-            # Restore the documents in RAG service
-            rag_service.sessions[DEFAULT_SESSION_ID] = {
-                "documents": persisted_documents,
-                "file_path": persisted_session_data.get("file_info", {}).get("filename", "persisted_data")
-            }
-            
-            # Try to load the FAISS vectorstore from disk
-            loaded_vectorstore = rag_service.load_vectorstore(DEFAULT_SESSION_ID)
-            if loaded_vectorstore:
-                rag_service.sessions[DEFAULT_SESSION_ID]["vectorstore"] = loaded_vectorstore
-                print("Loaded FAISS vectorstore from disk")
+        if not rag_processor.load_vectorstore():
+            # Try to load default data
+            default_file = "L2_L3Tickets.xlsx"
+            if os.path.exists(default_file):
+                logger.info(f"Loading default data from {default_file}")
+                try:
+                    rag_processor.process_excel_file(default_file, os.path.basename(default_file), "default_file")
+                    logger.info("Default data loaded successfully")
+                except Exception as e:
+                    logger.error(f"Error loading default data: {e}")
+                    raise
             else:
-                print(" No saved vectorstore found, will create on first use")
-            
-            # Restore the session metadata
-            sessions[DEFAULT_SESSION_ID] = persisted_session_data
-            sessions[DEFAULT_SESSION_ID]["is_default"] = True
-            
-            print(f" Restored shared knowledge base with {len(persisted_documents)} documents")
-            return True
-        
-        # If no persisted data, fall back to loading default Excel file
-        if os.path.exists(DEFAULT_EXCEL_FILE):
-            print(f"Loading default support ticket data from: {DEFAULT_EXCEL_FILE}")
-            
-            # Process the default file
-            success = await rag_service.process_file(DEFAULT_EXCEL_FILE, DEFAULT_SESSION_ID)
-            
-            if success:
-                # Get file info
-                df = pd.read_excel(DEFAULT_EXCEL_FILE)
-                file_info = {
-                    "filename": os.path.basename(DEFAULT_EXCEL_FILE),
-                    "rows": len(df),
-                    "columns": len(df.columns),
-                    "column_names": df.columns.tolist()
-                }
-                
-                # Store default session info
-                sessions[DEFAULT_SESSION_ID] = {
-                    "file_info": file_info,
-                    "upload_time": datetime.now().isoformat(),
-                    "chat_history": [],
-                    "is_default": True
-                }
-                
-                # Save this as the initial persisted state
-                save_shared_documents(rag_service.sessions[DEFAULT_SESSION_ID]["documents"], DEFAULT_SESSION_ID)
-                save_shared_session(sessions[DEFAULT_SESSION_ID])
-                
-                print(f" Default support ticket data loaded successfully!")
-                print(f"   {len(df)} tickets loaded with {len(df.columns)} columns")
-                return True
-            else:
-                print(" Failed to process default file")
-                return False
+                logger.warning(f"Default file {default_file} not found - starting with empty knowledge base")
         else:
-            print(f" Default file not found: {DEFAULT_EXCEL_FILE}")
-            return False
+            logger.info("Existing vectorstore loaded successfully")
             
+        # Clean up old sessions on startup
+        cleanup_old_sessions()
+        
+        logger.info("Application initialization completed")
+        
     except Exception as e:
-        print(f"Error loading default data: {str(e)}")
-        return False
+        logger.error(f"Failed to initialize application: {e}")
+        raise
 
-@app.get("/health")
+# Health check endpoint
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "message": "Excel RAG Chatbot API is running!",
-        "timestamp": datetime.now().isoformat(),
-        "default_session_loaded": DEFAULT_SESSION_ID in sessions
-    }
+    return HealthResponse(vectorstore_loaded=rag_processor.vectorstore is not None and len(rag_processor.documents) > 0)
 
-@app.get("/default-session")
-async def get_default_session():
-    """Get information about the default session"""
-    if DEFAULT_SESSION_ID not in sessions:
-        return {
-            "available": False,
-            "message": "Default session not loaded"
-        }
-    
-    session_data = sessions[DEFAULT_SESSION_ID]
-    return {
-        "available": True,
-        "session_id": DEFAULT_SESSION_ID,
-        "file_info": session_data.get("file_info"),
-        "loaded_at": session_data.get("upload_time"),
-        "ticket_count": session_data.get("file_info", {}).get("rows", 0)
-    }
-
-@app.post("/upload", response_model=FileUploadResponse)
+# Upload file endpoint
+@app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    session_id: str = Form(...)  # Keep for tracking who uploaded
+    session_id: str = Form(...)
 ):
-    """Upload and add Excel file to shared knowledge base"""
+    logger.info(f"Upload request received for file: {file.filename}, session: {session_id}")
+    
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        logger.warning(f"Invalid file type uploaded: {file.filename}")
+        raise HTTPException(status_code=400, detail="Only Excel files (.xlsx, .xls) are supported")
+    
+    # Save uploaded file temporarily
+    temp_path = f"temp_{session_id}_{file.filename}"
     try:
-        # Validate file type
-        if not file.filename.endswith(('.xlsx', '.xls')):
-            raise HTTPException(
-                status_code=400, 
-                detail="Only Excel files (.xlsx, .xls) are supported"
-            )
-        
-        # Check if shared session exists
-        if DEFAULT_SESSION_ID not in sessions:
-            raise HTTPException(status_code=404, detail="Shared knowledge base not available")
-        
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+        with open(temp_path, "wb") as buffer:
             content = await file.read()
-            tmp_file.write(content)
-            tmp_file_path = tmp_file.name
+            buffer.write(content)
         
-        try:
-            # Get current document count for logging
-            current_docs = len(rag_service.sessions.get(DEFAULT_SESSION_ID, {}).get("documents", []))
-            
-            # Add file to existing shared session
-            success = await rag_service.append_file(tmp_file_path, DEFAULT_SESSION_ID)
-            
-            if success:
-                # Get new file info
-                df = pd.read_excel(tmp_file_path)
-                added_rows = len(df)
-                
-                # Update shared session info
-                shared_session_data = sessions[DEFAULT_SESSION_ID]
-                current_file_info = shared_session_data.get("file_info", {})
-                current_rows = current_file_info.get("rows", 0)
-                
-                # Update file info to reflect combined data
-                updated_file_info = current_file_info.copy()
-                updated_file_info["rows"] = current_rows + added_rows
-                updated_file_info["filename"] += f" + {file.filename} (uploaded by {session_id[:8]}...)"
-                
-                shared_session_data["file_info"] = updated_file_info
-                
-                # Add to shared session chat history
-                shared_session_data["chat_history"].append({
-                    "timestamp": datetime.now().isoformat(),
-                    "type": "file_uploaded",
-                    "filename": file.filename,
-                    "added_rows": added_rows,
-                    "uploaded_by": session_id
-                })
-                
-                # Persist the updated shared knowledge base
-                save_shared_documents(rag_service.sessions[DEFAULT_SESSION_ID]["documents"], DEFAULT_SESSION_ID)
-                save_shared_session(shared_session_data)
-                
-                return FileUploadResponse(
-                    success=True,
-                    message=f"File '{file.filename}' added to shared knowledge base successfully! All users can now access this data.",
-                    file_info=updated_file_info,
-                    session_id=DEFAULT_SESSION_ID
-                )
-            else:
-                raise HTTPException(status_code=500, detail="Failed to add file to shared knowledge base")
-                
-        finally:
-            # Clean up temporary file
-            os.unlink(tmp_file_path)
-            
-    except HTTPException:
-        raise
+        logger.info(f"Processing uploaded file: {file.filename}")
+        # Process the file
+        num_rows = rag_processor.process_excel_file(temp_path, file.filename)
+        logger.info(f"Successfully processed {num_rows} rows from {file.filename}")
+        
+        return {
+            "message": f"Successfully processed {num_rows} rows from {file.filename}",
+            "rows": num_rows
+        }
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error adding file to shared knowledge base: {str(e)}")
+        logger.error(f"Error processing uploaded file {file.filename}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Clean up temp file
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+                logger.debug(f"Cleaned up temporary file: {temp_path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary file {temp_path}: {e}")
 
+# Chat endpoint
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """Chat with the RAG system"""
+    global cleanup_counter
+    logger.info(f"Chat request received - session: {request.session_id}, message length: {len(request.message)}")
+    
     try:
-        session_id = request.session_id
+        # Periodic cleanup of old sessions (every 100 requests)
+        cleanup_counter += 1
+        if cleanup_counter >= 100:
+            cleanup_old_sessions()
+            cleanup_counter = 0
         
-        # Always prefer user's session if provided and exists, otherwise use default
-        if not session_id or session_id not in sessions:
-            if DEFAULT_SESSION_ID in sessions:
-                session_id = DEFAULT_SESSION_ID
-                print(f"Using default session for chat: {session_id}")
-            else:
-                raise HTTPException(status_code=404, detail="No active sessions available. Please wait for the system to initialize.")
-        
-        # Handle data addition mode
-        if request.mode == "add_resolution" or "add resolution" in request.message.lower() or "add data" in request.message.lower():
-            return await handle_data_addition(request, session_id)
-        
-        # Check if we're in the middle of data collection
-        session_data = sessions[session_id]
-        if "pending_resolution" in session_data:
-            return await continue_data_collection(request, session_id)
-        
-        # Normal chat query
-        response = await rag_service.query(request.message, session_id)
-        
-        if "error" in response:
-            raise HTTPException(status_code=500, detail=response["error"])
-        
-        # Add option to add new resolution
-        enhanced_response = response["answer"]
-        
-        # Store chat history
-        chat_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "user_message": request.message,
-            "bot_response": enhanced_response,
-            "sources": response.get("sources", [])
+        # Add user message to session memory
+        user_message = {
+            "role": "user",
+            "content": request.message,
+            "timestamp": datetime.datetime.now().isoformat()
         }
-        session_data["chat_history"].append(chat_entry)
+        add_to_session_memory(request.session_id, user_message)
+        
+        # Get conversation history
+        conversation_history = get_session_memory(request.session_id)
+        logger.debug(f"Retrieved {len(conversation_history)} messages from session memory")
+        
+        # Search for relevant documents
+        relevant_docs = rag_processor.search_documents(request.message, k=5)
+        logger.debug(f"Found {len(relevant_docs)} relevant documents for query")
+        
+        # Generate response with conversation context
+        response_text = rag_processor.generate_response_with_context(
+            request.message, 
+            relevant_docs, 
+            conversation_history
+        )
+        logger.info(f"Generated response for session {request.session_id}")
+        
+        # Add assistant response to session memory
+        assistant_message = {
+            "role": "assistant",
+            "content": response_text,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        add_to_session_memory(request.session_id, assistant_message)
+        
+        # Prepare sources
+        sources = []
+        for doc in relevant_docs:
+            metadata = doc["metadata"]
+            logger.debug(f"Processing source metadata: {metadata}")
+            
+            # Determine source info based on available metadata
+            source_type = metadata.get("source_type")
+            filename = metadata.get("filename")
+            
+            if source_type == "user_resolution":
+                source_info = f"Resolution: {metadata.get('error_code', 'N/A')} ({metadata.get('module', 'N/A')})"
+            elif source_type in ["uploaded_file", "default_file"]:
+                source_info = filename or f"{source_type.replace('_', ' ').title()}"
+            elif filename:
+                source_info = filename
+            else:
+                # Fallback for documents with incomplete metadata
+                row_index = metadata.get("row_index", "Unknown")
+                source_info = f"Ticket Data (Row {row_index})"
+            
+            sources.append({
+                "content": doc["content"],
+                "metadata": {
+                    "source": source_info
+                }
+            })
         
         return ChatResponse(
-            success=True,
-            response=enhanced_response,
-            sources=response.get("sources", []),
-            session_id=session_id,
-            actions=[{"type": "button", "label": "Add Resolution", "action": "add_resolution"}]
+            response=response_text,
+            sources=sources
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error in chat: {str(e)}")
+        logger.error(f"Error processing chat request for session {request.session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-async def handle_data_addition(request: ChatRequest, session_id: str) -> ChatResponse:
-    """Handle the start of data addition process"""
-    session_data = sessions[session_id]
-    
-    # Initialize pending resolution data
-    session_data["pending_resolution"] = {
-        "step": "ticket_level",
-        "data": {}
-    }
-    
-    response_text = """**Add New Resolution**
-
-I'll help you add a new ticket resolution to the knowledge base. Please provide the following information:
-
-**Ticket Level** (L2 or L3): """
-    
-    return ChatResponse(
-        success=True,
-        response=response_text,
-        sources=[],
-        session_id=session_id
-    )
-
-async def continue_data_collection(request: ChatRequest, session_id: str) -> ChatResponse:
-    """Continue collecting data for resolution addition"""
-    session_data = sessions[session_id]
-    pending = session_data["pending_resolution"]
-    user_input = request.message.strip()
-    
-    if pending["step"] == "ticket_level":
-        if user_input.upper() in ["L2", "L3"]:
-            pending["data"]["Ticket Level"] = user_input.upper()
-            pending["step"] = "category"
-            response_text = "**Category** (e.g., Shipping, Payment, API, etc.): "
-        else:
-            response_text = "Please enter L2 or L3 for the ticket level."
-    
-    elif pending["step"] == "category":
-        pending["data"]["Category"] = user_input
-        pending["step"] = "problem"
-        response_text = "**Problem Statement** (describe the issue): "
-    
-    elif pending["step"] == "problem":
-        pending["data"]["Problem Statement"] = user_input
-        pending["step"] = "resolution"
-        response_text = "**Resolution Steps** (describe how to fix it): "
-    
-    elif pending["step"] == "resolution":
-        pending["data"]["Resolution Steps"] = user_input
-        
-        # Map the collected data to the format expected by add_resolution
-        resolution_data = {
-            "error_code": f"{pending['data']['Category']} Issue",  # Use category as error code
-            "module": pending["data"]["Category"],
-            "description": pending["data"]["Problem Statement"],
-            "resolution_steps": pending["data"]["Resolution Steps"],
-            "ticket_level": pending["data"]["Ticket Level"]
-        }
-        
-        # Add the data to the session using the add_resolution method
-        # Always add to the default/shared session so everyone can access new resolutions
-        result = await rag_service.add_resolution(DEFAULT_SESSION_ID, resolution_data)
-        
-        if "success" in result and result["success"]:
-            # Update session info for the default session
-            default_session_data = sessions[DEFAULT_SESSION_ID]
-            current_file_info = default_session_data.get("file_info", {})
-            current_rows = current_file_info.get("rows", 0)
-            current_file_info["rows"] = current_rows + 1
-            current_file_info["filename"] += " + manual resolution"
-            default_session_data["file_info"] = current_file_info
-            
-            # Add to chat history for both the user's session and default session
-            default_session_data["chat_history"].append({
-                "timestamp": datetime.now().isoformat(),
-                "type": "resolution_added",
-                "data": pending["data"],
-                "added_by_session": session_id
-            })
-            
-            # Also add to user's session chat history
-            session_data["chat_history"].append({
-                "timestamp": datetime.now().isoformat(),
-                "type": "resolution_added",
-                "data": pending["data"]
-            })
-            
-            # Save the updated shared knowledge base to persistent storage
-            save_shared_documents(rag_service.sessions[DEFAULT_SESSION_ID]["documents"], DEFAULT_SESSION_ID)
-            save_shared_session(default_session_data)
-            
-            response_text = "**Resolution Added Successfully!**\n\n" + \
-                           f"**Ticket Level:** {pending['data']['Ticket Level']}\n" + \
-                           f"**Category:** {pending['data']['Category']}\n" + \
-                           f"**Problem:** {pending['data']['Problem Statement']}\n" + \
-                           f"**Resolution:** {pending['data']['Resolution Steps']}\n\n" + \
-                           "This resolution has been added to the **shared knowledge base** and will be available for all users to access."
-        else:
-            error_msg = result.get("error", "Unknown error")
-            response_text = f" Sorry, there was an error adding the resolution: {error_msg}. Please try again."
-        
-        # Clear pending data
-        del session_data["pending_resolution"]
-    
-    return ChatResponse(
-        success=True,
-        response=response_text,
-        sources=[],
-        session_id=session_id
-    )
-
+# Add resolution endpoint
 @app.post("/add-resolution")
-async def add_resolution(resolution_data: Dict[str, Any], session_id: str):
-    """Add a new resolution to the shared ticket data"""
+async def add_resolution(resolution: ResolutionRequest):
+    logger.info(f"Add resolution request received - error_code: {resolution.error_code}, module: {resolution.module}")
+    
     try:
-        # Always add to the default/shared session so everyone can access new resolutions
-        shared_session_id = DEFAULT_SESSION_ID
-        
-        if shared_session_id not in sessions:
-            raise HTTPException(status_code=404, detail="Shared session not available")
-        
-        # Add the resolution using the RAG service to the shared session
-        result = await rag_service.add_resolution(shared_session_id, resolution_data)
-        
-        if "error" in result:
-            raise HTTPException(status_code=400, detail=result["error"])
-        
-        # Update shared session info
-        shared_session_data = sessions[shared_session_id]
-        current_file_info = shared_session_data.get("file_info", {})
-        current_rows = current_file_info.get("rows", 0)
-        current_file_info["rows"] = current_rows + 1
-        current_file_info["filename"] += " + manual resolution"
-        shared_session_data["file_info"] = current_file_info
-        
-        # Add to shared session chat history
-        shared_session_data["chat_history"].append({
-            "timestamp": datetime.now().isoformat(),
-            "type": "resolution_added",
-            "data": resolution_data,
-            "added_by_session": session_id
-        })
-        
-        # Save the updated shared knowledge base to persistent storage
-        save_shared_documents(rag_service.sessions[shared_session_id]["documents"], shared_session_id)
-        save_shared_session(shared_session_data)
-        
-        return result
-        
-    except HTTPException:
-        raise
+        rag_processor.add_resolution(resolution.dict())
+        logger.info("Resolution added successfully to knowledge base")
+        return {"message": "Resolution added successfully to the knowledge base"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error adding resolution: {str(e)}")
+        logger.error(f"Error adding resolution: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Feedback endpoint
+@app.post("/feedback")
+async def submit_feedback(feedback: FeedbackRequest):
+    logger.info(f"Feedback received - type: {feedback.type}, messageId: {feedback.messageId}")
+    
+    try:
+        # For negative feedback, save to file
+        if feedback.type == "negative":
+            feedback_entry = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "message_id": feedback.messageId,
+                "type": feedback.type,
+                "suggestions": feedback.suggestions
+            }
+            
+            # Save to feedback.json file
+            feedback_file = "feedback.json"
+            try:
+                # Load existing feedback if file exists
+                if os.path.exists(feedback_file):
+                    with open(feedback_file, 'r') as f:
+                        existing_feedback = json.load(f)
+                else:
+                    existing_feedback = []
+                
+                # Add new feedback
+                existing_feedback.append(feedback_entry)
+                
+                # Save back to file
+                with open(feedback_file, 'w') as f:
+                    json.dump(existing_feedback, f, indent=2)
+                
+                logger.info(f"Negative feedback saved to {feedback_file}")
+            except Exception as e:
+                logger.error(f"Error saving feedback to file: {e}")
+                raise HTTPException(status_code=500, detail="Failed to save feedback")
+        
+        return {"message": "Feedback submitted successfully"}
+    except Exception as e:
+        logger.error(f"Error processing feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-
-    )
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

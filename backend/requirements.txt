@@ -1,22 +1,31 @@
-# FastAPI and server dependencies - compatible versions
-fastapi>=0.100.0,<0.112.0
-uvicorn[standard]>=0.24.0,<0.32.0
-python-multipart>=0.0.6
+# FastAPI and server dependencies
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+pydantic==2.10.3
 
 # Core dependencies
-pandas>=2.1.0
-openpyxl>=3.1.0
+pandas==2.2.3
+openpyxl==3.1.5
 
-# Minimal dependencies for our custom implementation
-sentence-transformers>=3.0.0
-faiss-cpu>=1.7.0
-numpy>=1.24.0
+# LangChain dependencies - compatible versions
+langchain-core==0.3.28
+langchain-community==0.3.13
+langchain-google-genai==2.0.7
+langchain-huggingface==0.1.2
 
-# Google Gemini AI (optional - will be handled gracefully if missing)
-google-generativeai>=0.4.0
+# Vector store
+faiss-cpu==1.9.0.post1
+
+# Embeddings
+sentence-transformers==3.3.1
+
+# Google Gemini AI
+google-generativeai==0.8.3
 
 # Environment variables
-python-dotenv>=1.0.0
+python-dotenv==1.0.1
 
 # Utility dependencies
-typing-extensions>=4.8.0
+numpy==1.26.4
+typing-extensions==4.12.2
