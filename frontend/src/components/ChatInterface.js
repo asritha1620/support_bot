@@ -309,7 +309,7 @@ const ChatInterface = ({
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Box>
             <Typography variant="body1">
-               Chat with your tickets
+               Chat with your Bot!
             </Typography>
             {fileInfo && (
               <Typography variant="caption" color="text.secondary">
@@ -322,15 +322,6 @@ const ChatInterface = ({
               </Typography>
             )}
           </Box>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<Add />}
-            onClick={handleAddResolution}
-            disabled={!hasDefaultData && !fileInfo}
-          >
-            Add Resolution
-          </Button>
         </Box>
       </Box>
 
@@ -347,7 +338,7 @@ const ChatInterface = ({
                 Welcome to Support Ticket Assistant!
               </Typography>
               <Typography variant="body2" color="text.secondary" gutterBottom sx={{ mb: 2 }}>
-                Upload Excel files to add to the shared knowledge base, or try asking one of these questions:
+                Upload Excel files to add to the shared knowledge base, or try asking your questions like these:
               </Typography>
               <Box>
                 {exampleQuestions.map((question, index) => (
