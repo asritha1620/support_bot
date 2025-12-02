@@ -1,7 +1,7 @@
 {
-  "name": "excel-rag-chatbot-frontend",
+  "name": "rag-chatbot-frontend",
   "version": "1.0.0",
-  "description": "Modern React frontend for Excel RAG Chatbot",
+  "description": "Modern React frontend for RAG Chatbot",
   "private": true,
   "dependencies": {
     "@emotion/react": "^11.11.1",
