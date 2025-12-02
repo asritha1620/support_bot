@@ -1,12 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-import os
+import os, logging, datetime, json
 from dotenv import load_dotenv
-import logging
 from schemas import ChatRequest, ChatResponse, ResolutionRequest, HealthResponse, FeedbackRequest
 from rag import RAGProcessor
-import datetime
-import json
 from collections import defaultdict
 from typing import Dict, List
 
@@ -35,7 +32,6 @@ app.add_middleware(
 # Global RAG processor
 rag_processor = RAGProcessor()
 
-# Session memory storage - in production, use Redis or database
 session_memories: Dict[str, List[Dict]] = defaultdict(list)
 MAX_MEMORY_MESSAGES = 20  # Keep last 20 messages per session
 cleanup_counter = 0  # Counter for periodic cleanup
