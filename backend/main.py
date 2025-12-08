@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-import os, logging, datetime, json
+import os, logging, datetime, json, uvicorn
 from dotenv import load_dotenv
 from schemas import ChatRequest, ChatResponse, ResolutionRequest, HealthResponse, FeedbackRequest
 from rag import RAGProcessor
@@ -303,6 +303,23 @@ async def submit_feedback(feedback: FeedbackRequest):
         logger.error(f"Error processing feedback: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Clear chat endpoint
+@app.post("/clear-chat")
+async def clear_chat(session_id: str = Form(...)):
+    logger.info(f"Clear chat request received for session: {session_id}")
+
+    try:
+        if session_id in session_memories:
+            del session_memories[session_id]
+            logger.info(f"Session {session_id} cleared successfully")
+            return {"message": f"Chat history cleared for session {session_id}"}
+        else:
+            logger.warning(f"Clear request for non-existent session: {session_id}")
+            return {"message": f"No chat history found for session {session_id}"}
+
+    except Exception as e:
+        logger.error(f"Error clearing chat for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to clear chat history")
+
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
