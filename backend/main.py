@@ -229,8 +229,7 @@ async def chat(request: ChatRequest):
                 source_info = filename
             else:
                 # Fallback for documents with incomplete metadata
-                row_index = metadata.get("row_index", "Unknown")
-                source_info = f"Ticket Data (Row {row_index})"
+                source_info = "Ticket Data"
             
             sources.append({
                 "content": doc["content"],
@@ -323,3 +322,4 @@ async def clear_chat(session_id: str = Form(...)):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
