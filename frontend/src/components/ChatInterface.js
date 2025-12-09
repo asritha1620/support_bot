@@ -22,7 +22,6 @@ import {
   ExpandLess,
   Error,
   AttachFile,
-  Add,
   ThumbUp,
   ThumbDown,
   Clear
@@ -205,57 +204,6 @@ const ChatInterface = ({
     event.target.value = '';
   };
 
-  const handleAddResolution = () => {
-    setAddResolutionOpen(true);
-  };
-
-  const handleCloseResolutionDialog = () => {
-    setAddResolutionOpen(false);
-    setResolutionData({
-      error_code: '',
-      module: '',
-      description: '',
-      resolution: '',
-      ticket_level: 'L2'
-    });
-  };
-
-  const handleResolutionDataChange = (field, value) => {
-    setResolutionData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleSubmitResolution = async () => {
-    // Validate required fields
-    if (!resolutionData.description.trim() || !resolutionData.resolution.trim()) {
-      alert('Please fill in the description and resolution fields.');
-      return;
-    }
-
-    try {
-      const response = await fetch('http://localhost:8000/add-resolution', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(resolutionData)
-      });
-
-      if (response.ok) {
-        alert('Resolution added successfully to the shared knowledge base! All users can now access this resolution.');
-        handleCloseResolutionDialog();
-      } else {
-        const error = await response.json();
-        alert(`Failed to add resolution: ${error.detail || 'Please try again.'}`);
-      }
-    } catch (error) {
-      console.error('Error adding resolution:', error);
-      alert('Error adding resolution. Please check the console for details.');
-    }
-  };
-
   const handleFeedback = (type, message) => {
     // Send feedback directly without dialog
     ApiService.submitFeedback({ 
@@ -263,16 +211,6 @@ const ChatInterface = ({
       messageId: message.id,
       suggestions: type === 'negative' ? 'User indicated response needs improvement' : ''
     });
-  };
-
-  const handleFeedbackSubmit = async () => {
-    await ApiService.submitFeedback({
-      type: feedbackData.type,
-      messageId: feedbackData.message.id,
-      suggestions: feedbackData.suggestions
-    });
-    setFeedbackDialogOpen(false);
-    setFeedbackData({ type: '', message: null, suggestions: '' });
   };
 
   const exampleQuestions = [
