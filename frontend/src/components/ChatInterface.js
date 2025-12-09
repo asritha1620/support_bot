@@ -12,14 +12,6 @@ import {
   Chip,
   Collapse,
   Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   CircularProgress
 } from '@mui/material';
 import {
@@ -32,7 +24,8 @@ import {
   AttachFile,
   Add,
   ThumbUp,
-  ThumbDown
+  ThumbDown,
+  Clear
 } from '@mui/icons-material';
 import ApiService from '../services/ApiService';
 
@@ -180,23 +173,10 @@ const ChatInterface = ({
   onFileUpload,
   hasDefaultData,
   fileInfo,
-  loading = false
+  loading = false,
+  onClearChat
 }) => {
   const [message, setMessage] = useState('');
-  const [addResolutionOpen, setAddResolutionOpen] = useState(false);
-  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
-  const [feedbackData, setFeedbackData] = useState({
-    type: '',
-    message: null,
-    suggestions: ''
-  });
-  const [resolutionData, setResolutionData] = useState({
-    error_code: '',
-    module: '',
-    description: '',
-    resolution: '',
-    ticket_level: 'L2'
-  });
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -277,13 +257,12 @@ const ChatInterface = ({
   };
 
   const handleFeedback = (type, message) => {
-    if (type === 'negative') {
-      setFeedbackData({ type, message, suggestions: '' });
-      setFeedbackDialogOpen(true);
-    } else {
-      // For positive feedback, just send it directly
-      ApiService.submitFeedback({ type, messageId: message.id });
-    }
+    // Send feedback directly without dialog
+    ApiService.submitFeedback({ 
+      type, 
+      messageId: message.id,
+      suggestions: type === 'negative' ? 'User indicated response needs improvement' : ''
+    });
   };
 
   const handleFeedbackSubmit = async () => {
@@ -298,8 +277,7 @@ const ChatInterface = ({
 
   const exampleQuestions = [
     "What are the most common shipping errors this month?",
-    "Can you show me tickets related to payment failures?",
-    "Show me tickets from customer ID 12345"
+    "Can you show me tickets related to payment failures?"
   ];
 
   return (
@@ -436,12 +414,12 @@ const ChatInterface = ({
           <Button
             variant="outlined"
             size="small"
-            startIcon={<Add />}
-            onClick={handleAddResolution}
-            disabled={!hasDefaultData && !fileInfo}
+            startIcon={<Clear />}
+            onClick={onClearChat}
+            disabled={chatHistory.length === 0}
             sx={{ mr: 1 }}
           >
-            Add Resolution
+            Clear Chat
           </Button>
           
           <TextField
@@ -481,108 +459,6 @@ const ChatInterface = ({
         </Box>
       </Box>
 
-      {/* Add Resolution Dialog */}
-      <Dialog open={addResolutionOpen} onClose={handleCloseResolutionDialog} maxWidth="md" fullWidth>
-        <DialogTitle>Add New Resolution</DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <TextField
-              label="Error Code (optional)"
-              value={resolutionData.error_code}
-              onChange={(e) => handleResolutionDataChange('error_code', e.target.value)}
-              placeholder="e.g., SHIP404, SHP-ERR-3344"
-              fullWidth
-            />
-            
-            <FormControl fullWidth>
-              <InputLabel>Module</InputLabel>
-              <Select
-                value={resolutionData.module}
-                onChange={(e) => handleResolutionDataChange('module', e.target.value)}
-                label="Module"
-              >
-                <MenuItem value="shipping">Shipping</MenuItem>
-                <MenuItem value="logistics">Logistics</MenuItem>
-                <MenuItem value="payment">Payment</MenuItem>
-                <MenuItem value="order">Order</MenuItem>
-                <MenuItem value="inventory">Inventory</MenuItem>
-                <MenuItem value="customer">Customer</MenuItem>
-                <MenuItem value="api">API</MenuItem>
-                <MenuItem value="database">Database</MenuItem>
-                <MenuItem value="other">Other</MenuItem>
-              </Select>
-            </FormControl>
-
-            <FormControl fullWidth>
-              <InputLabel>Ticket Level</InputLabel>
-              <Select
-                value={resolutionData.ticket_level}
-                onChange={(e) => handleResolutionDataChange('ticket_level', e.target.value)}
-                label="Ticket Level"
-              >
-                <MenuItem value="L1">L1</MenuItem>
-                <MenuItem value="L2">L2</MenuItem>
-                <MenuItem value="L3">L3</MenuItem>
-              </Select>
-            </FormControl>
-
-            <TextField
-              label="Issue Description"
-              value={resolutionData.description}
-              onChange={(e) => handleResolutionDataChange('description', e.target.value)}
-              multiline
-              rows={3}
-              placeholder="Describe the issue or error that occurred"
-              fullWidth
-              required
-            />
-
-            <TextField
-              label="Resolution Steps"
-              value={resolutionData.resolution}
-              onChange={(e) => handleResolutionDataChange('resolution', e.target.value)}
-              multiline
-              rows={4}
-              placeholder="Describe the steps taken to resolve this issue"
-              fullWidth
-              required
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseResolutionDialog}>Cancel</Button>
-          <Button onClick={handleSubmitResolution} variant="contained">
-            Add Resolution
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Feedback Dialog */}
-      <Dialog open={feedbackDialogOpen} onClose={() => setFeedbackDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Provide Feedback</DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              What could be improved about this response?
-            </Typography>
-            <TextField
-              fullWidth
-              multiline
-              rows={4}
-              placeholder="Please describe what was wrong or what could be better..."
-              value={feedbackData.suggestions}
-              onChange={(e) => setFeedbackData(prev => ({ ...prev, suggestions: e.target.value }))}
-              sx={{ mt: 1 }}
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setFeedbackDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleFeedbackSubmit} variant="contained" disabled={!feedbackData.suggestions.trim()}>
-            Submit Feedback
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };
