@@ -108,7 +108,7 @@ class RAGProcessor:
             # Convert each row to text
             texts = []
             for idx, row in df.iterrows():
-                text = f"Row {idx}: " + " | ".join([f"{col}: {val}" for col, val in row.items() if pd.notna(val)])
+                text = f" | ".join([f"{col}: {val}" for col, val in row.items() if pd.notna(val)])
                 texts.append(text)
             
             logger.info(f"Generated {len(texts)} text documents from Excel rows")
@@ -311,4 +311,5 @@ class RAGProcessor:
             
         except Exception as e:
             logger.error(f"Error adding resolution: {e}")
+
             raise
