@@ -47,6 +47,13 @@ class ApiService {
     const response = await this.api.post('/feedback', feedbackData);
     return response.data;
   }
+
+  async clearChat(sessionId) {
+    const response = await this.api.post('/clear-chat', {
+      session_id: sessionId,
+    });
+    return response.data;
+  }
 }
 
 const apiService = new ApiService();
