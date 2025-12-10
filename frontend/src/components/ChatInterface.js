@@ -12,6 +12,10 @@ import {
   Chip,
   Collapse,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   CircularProgress
 } from '@mui/material';
 import {
@@ -176,6 +180,12 @@ const ChatInterface = ({
   onClearChat
 }) => {
   const [message, setMessage] = useState('');
+  const [resolutionDialogOpen, setResolutionDialogOpen] = useState(false);
+  const [resolutionData, setResolutionData] = useState({
+    error_code: '',
+    resolution_text: ''
+  });
+  const [currentFeedbackMessage, setCurrentFeedbackMessage] = useState(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -205,12 +215,56 @@ const ChatInterface = ({
   };
 
   const handleFeedback = (type, message) => {
-    // Send feedback directly without dialog
-    ApiService.submitFeedback({ 
-      type, 
-      messageId: message.id,
-      suggestions: type === 'negative' ? 'User indicated response needs improvement' : ''
+    if (type === 'negative') {
+      // Open resolution dialog for negative feedback
+      setCurrentFeedbackMessage(message);
+      setResolutionDialogOpen(true);
+    } else {
+      // Submit positive feedback directly (no additional text needed)
+      ApiService.submitFeedback({ 
+        type, 
+        messageId: message.id
+      });
+    }
+  };
+
+  const handleResolutionDataChange = (field, value) => {
+    setResolutionData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleSubmitResolution = async () => {
+    if (!resolutionData.resolution_text.trim()) {
+      alert('Please provide your expected resolution steps.');
+      return;
+    }
+
+    try {
+      // Submit feedback with resolution data
+      await ApiService.submitFeedback({
+        type: 'negative',
+        messageId: currentFeedbackMessage.id,
+        resolution_text: resolutionData.resolution_text,
+        error_code: resolutionData.error_code || null
+      });
+
+      alert('Resolution added and feedback submitted successfully!');
+      handleCloseResolutionDialog();
+    } catch (error) {
+      console.error('Error submitting resolution:', error);
+      alert('Error submitting resolution. Please check the console for details.');
+    }
+  };
+
+  const handleCloseResolutionDialog = () => {
+    setResolutionDialogOpen(false);
+    setResolutionData({
+      error_code: '',
+      resolution_text: ''
     });
+    setCurrentFeedbackMessage(null);
   };
 
   const exampleQuestions = [
@@ -397,6 +451,42 @@ const ChatInterface = ({
         </Box>
       </Box>
 
+      {/* Resolution Dialog for Negative Feedback */}
+      <Dialog open={resolutionDialogOpen} onClose={handleCloseResolutionDialog} maxWidth="md" fullWidth>
+        <DialogTitle>Help Us Improve - Provide Your Expected Resolution</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField
+              label="Error Code (optional)"
+              value={resolutionData.error_code}
+              onChange={(e) => handleResolutionDataChange('error_code', e.target.value)}
+              placeholder="e.g., SHIP404, SHP-ERR-3344"
+              fullWidth
+            />
+
+            <TextField
+              label="Please provide your expected resolution steps:"
+              value={resolutionData.resolution_text}
+              onChange={(e) => handleResolutionDataChange('resolution_text', e.target.value)}
+              multiline
+              rows={6}
+              placeholder="What should the correct response be? You can write multiple steps, one per line..."
+              fullWidth
+              required
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseResolutionDialog}>Cancel</Button>
+          <Button 
+            onClick={handleSubmitResolution} 
+            variant="contained" 
+            disabled={!resolutionData.resolution_text.trim()}
+          >
+            Submit Resolution & Feedback
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
