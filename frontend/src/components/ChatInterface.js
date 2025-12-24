@@ -123,7 +123,7 @@ const ChatMessage = ({ message, onFeedback }) => {
                     {message.sources.map((source, index) => (
                       <Chip
                         key={index}
-                        label={source.metadata.source || 'Unknown source'}
+                        label={source}
                         size="small"
                         variant="outlined"
                         sx={{ mr: 0.5, mb: 0.5 }}
