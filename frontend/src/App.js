@@ -112,6 +112,16 @@ function App() {
     }
   };
 
+  const handleClearChat = async () => {
+    try {
+      await ApiService.clearChat(sessionId);
+      setChatHistory([]);
+      setSuccess('Chat history cleared successfully.');
+    } catch (err) {
+      setError('Error clearing chat history.');
+    }
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -134,6 +144,7 @@ function App() {
             chatHistory={chatHistory}
             onSendMessage={handleSendMessage}
             onFileUpload={handleFileUpload}
+            onClearChat={handleClearChat}
             disabled={isLoading}
             hasDefaultData={hasDefaultData}
             fileInfo={fileInfo}
