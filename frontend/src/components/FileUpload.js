@@ -20,7 +20,7 @@ const FileUpload = ({ onFileUpload, isLoading, onReset }) => {
     setDragError('');
     
     if (rejectedFiles.length > 0) {
-      setDragError('Please upload only Excel ticket data files (.xlsx, .xls)');
+      setDragError('Please upload only Excel (.xlsx, .xls) or PDF (.pdf) files');
       return;
     }
 
@@ -33,7 +33,8 @@ const FileUpload = ({ onFileUpload, isLoading, onReset }) => {
     onDrop,
     accept: {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'application/vnd.ms-excel': ['.xls']
+      'application/vnd.ms-excel': ['.xls'],
+      'application/pdf': ['.pdf']
     },
     multiple: false,
     disabled: isLoading
@@ -47,7 +48,7 @@ const FileUpload = ({ onFileUpload, isLoading, onReset }) => {
   return (
     <Paper elevation={2} sx={{ p: 0.5 }}>
       <Typography variant="body1" gutterBottom>
-        📁 Upload Ticket Data
+        📁 Upload Ticket Data or Documentation
       </Typography>
 
       {/* File Upload */}
@@ -80,12 +81,12 @@ const FileUpload = ({ onFileUpload, isLoading, onReset }) => {
               <CloudUpload sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
               <Typography variant="body2" gutterBottom>
                 {isDragActive
-                  ? 'Drop the ticket data file here...'
-                  : 'Drag & drop ticket data here, or click to select'
+                  ? 'Drop the file here...'
+                  : 'Drag & drop ticket data or documentation here, or click to select'
                 }
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Supports .xlsx and .xls ticket data files
+                Supports .xlsx, .xls, and .pdf files
               </Typography>
             </Box>
           )}
